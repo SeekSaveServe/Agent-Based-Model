@@ -9,7 +9,8 @@ turtles-own ;; define tutrle variable
   quarantineDays ;; days turtle has been under quarantine
   sickDays ;; #days turtle has been infected
   immuneDays ;; #days turtle has been immune
-  ;; driver var
+             ;; driver var
+  zone ;; 0-3 to represent a zone they are in, only those from the same zone can be infected
   restTime
   rested? ;; ensure they rest once every hub
   no-skip ;; number of stops to skip needs to be alternated beteen x and x' s.t x + x' = 8
@@ -91,7 +92,15 @@ to setup-drivers
     set rested? true ;; assume they rested before the trip
     set heading ((xcor mod 1) * (ycor mod 1) * 90) ;; face the correct orientation
     set size 1 ;; easier to see
-    set no-skip (1 + random 6) ;; assign x to skip-no, where  1<=x<=7
+    set no-skip (1 + random 6) ;;assign x to skip-no, where  1<=x<=7
+
+    ifelse zoning ;; if zoning is enabled
+    [
+      set zone (random 4) ;; assign drivers to a zone
+    ]
+    [
+      set zone 1 ;; else assign everyone the same zone
+    ]
   ]
 end
 
@@ -128,13 +137,13 @@ to get-healthy
 end
 
 to reset
-    set sickDays 0 ;; people are not sick initialy
-    set vaccinated? true ;; We assume that all drivers are vaccinated
-    become-immune ;; for the purpose of our simulation, we assume that drivers will not lose immunity
-    set symptomatic? false
-    set quarantine? false
-    set symptomaticTested? false ;;this is also set to false upon re-infection
-    set spreader? false
+  set sickDays 0 ;; people are not sick initialy
+  set vaccinated? true ;; We assume that all drivers are vaccinated
+  become-immune ;; for the purpose of our simulation, we assume that drivers will not lose immunity
+  set symptomatic? false
+  set quarantine? false
+  set symptomaticTested? false ;;this is also set to false upon re-infection
+  set spreader? false
 end
 
 to become-immune
@@ -238,20 +247,20 @@ to move-driver ;; idk how scoping works in netlogo and at this point i m too laz
     ]
     ;;if ticks mod 96 = 0 ;; new day reverse direction
     ;;[
-     ;;rt 180 ;; change orientation
-   ;; ]
+    ;;rt 180 ;; change orientation
+    ;; ]
 
     check-dir ;; check if i am going to the right direction
 
     if temp = 0 ;; advance 1 step
     [road-move
-    stop]
+      stop]
     if temp = 2 ;; turns
     [re-align
-    stop]
+      stop]
     if temp = 1 ;; rest at hub
     [hub-move
-    stop]
+      stop]
   ]
 end
 
@@ -259,11 +268,11 @@ to check-dir ;; need to make them turn correctly
 
   ask patch-here
   [
-   if land-type = 1 ;; hub
+    if land-type = 1 ;; hub
     [set temp 1] ;; wow MIPS actly taught me smth useful
-   if land-type = 0 ;; road
+    if land-type = 0 ;; road
     [set temp 0]
-   if land-type = 2 ;; otherwise
+    if land-type = 2 ;; otherwise
     [set temp 2]
   ]
 end
@@ -298,9 +307,9 @@ end
 to re-align ;; i hope no one reads this garbage code
   while [temp > 0] ;; we have not found the right direction
   [
-   ask patch-ahead 1 ;; check the patch infront
+    ask patch-ahead 1 ;; check the patch infront
     [if land-type = 0 [set temp -1]] ;; faces road now
-   if temp > 0
+    if temp > 0
     [rt 90]
   ]
   fd 1 ;; move forward by a step
@@ -319,7 +328,9 @@ end
 
 to infect
   ask turtles with [sick? and not quarantine?];;quarantined turtles cannot spread
-    [ ask other turtles-here with [not quarantine? and restTime > 0] ;;quarantined turtles cannot be inefected only infect while at hub
+    [
+      set temp zone ; temp = zone number. Wow who knew MIPS actly taught me something
+      ask other turtles-here with [not quarantine? and restTime > 0 and zone = temp] ;;quarantined turtles cannot be infected, only infect while at hub, and only infect those from same hub
       [ ifelse spreader? ;; super spreader event
         [get-sick] ;; 100% infectivity
         [ ifelse immune?
@@ -388,15 +399,32 @@ to trace
   ask turtles with [symptomatic? and not quarantine?]
   ;; if the turtle is sick, we trace every other turtle within 4 step radius and test them
   [
-    set temp (no-skip) ;; temp will be the criteria we use to contact trace. the criteria is same no-skip (route) and same restedness
-    ask turtles with [(no-skip = temp)] ;; turtles that fits the criteria
-    [if sick? ;; quarantine those tested sick
-      [ set quarantine? true ;; sent the turtle to quarantine
-        set color yellow
-        set quarantineDays 0
-        set all-quarantine (all-quarantine + 1)]]] ;;quarantine sick turtles
+    ifelse zoning
+    [
+      set temp (zone) ;; we test those in the same zone
+      ask turtles with [temp = zone]
+      [
+        if sick? ;; quarantine those tested sick
+          [send-quarantine] ;;quarantine sick turtles
+
+      ]
+    ]
+    [
+      set temp (no-skip) ;; temp will be the criteria we use to contact trace. the criteria is same no-skip (route)
+      ask turtles with [(no-skip = temp)] ;; turtles that fits the criteria
+      [if sick? ;; quarantine those tested sick
+        [send-quarantine] ;;quarantine sick turtles
+      ]
+    ]
+  ]
 end
 
+to send-quarantine
+  set quarantine? true ;; sent the turtle to quarantine
+  set color yellow
+  set quarantineDays 0
+  set all-quarantine (all-quarantine + 1)
+end
 to hospital
   ifelse immune?
   [ifelse ((random-float 100) * immunity-constant < chance-mild)
@@ -714,7 +742,7 @@ initial-infected
 initial-infected
 0
 100
-24.0
+22.0
 1
 1
 NIL
@@ -752,7 +780,7 @@ INPUTBOX
 50
 421
 People
-1000.0
+3000.0
 1
 0
 Number
@@ -764,7 +792,7 @@ SWITCH
 297
 mask
 mask
-0
+1
 1
 -1000
 
@@ -858,13 +886,24 @@ super-spreader
 
 TEXTBOX
 179
-143
+76
 313
-199
-Trace criteria has been changed to capture those that have the same route and rested at the same hub
+202
+Trace criteria has been changed to capture those on the same hub & rest route(if zoning not enabled)\n\nWith zoning, everyone from the same zone is tested
 11
 0.0
 1
+
+SWITCH
+191
+232
+294
+265
+zoning
+zoning
+0
+1
+-1000
 
 @#$#@#$#@
 ## WHAT IS IT?
@@ -1213,54 +1252,11 @@ NetLogo 6.2.0
 @#$#@#$#@
 @#$#@#$#@
 <experiments>
-  <experiment name="experiment" repetitions="30" runMetricsEveryStep="false">
+  <experiment name="experiment" repetitions="30" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
+    <timeLimit steps="912"/>
     <metric>count turtles with [sick?]</metric>
-    <metric>count turtles with [vaccinated?]</metric>
-    <metric>count turtles</metric>
-    <enumeratedValueSet variable="initial-infected">
-      <value value="29"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="chance-symptoms">
-      <value value="28"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="trace-radius">
-      <value value="4"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="mask">
-      <value value="true"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="incubation-period">
-      <value value="4"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="immune-time">
-      <value value="100"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="chance-recover">
-      <value value="68"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="quarantine-period">
-      <value value="21"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="immunity-constant">
-      <value value="4"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="vaccine-rate">
-      <value value="50"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="duration">
-      <value value="23"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="infectiousness">
-      <value value="29.4"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="mask-effect">
-      <value value="0.7"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="People">
-      <value value="500"/>
-    </enumeratedValueSet>
   </experiment>
 </experiments>
 @#$#@#$#@
